@@ -73,7 +73,7 @@ class LogisticRegressionModel(ShieldModel):
             # that scales acceptably to 300k rows without a sparse matrix.
             "solver": "lbfgs",
             "C": 1.0,
-            "max_iter": 600,
+            "": 2000,
             "n_jobs": self.n_jobs,
             "random_state": self.seed,
             **self.params,
@@ -426,7 +426,7 @@ class MLPModel(ShieldModel):
             "alpha": 1e-4,
             "batch_size": 512,
             "learning_rate_init": 1e-3,
-            "max_iter": 120,
+            "": 120,
             "early_stopping": True,
             "n_iter_no_change": 10,
             "validation_fraction": 0.1,
