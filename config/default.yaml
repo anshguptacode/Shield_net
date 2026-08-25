@@ -1,0 +1,171 @@
+# ShieldNet - default configuration
+# ============================================================================
+# This file restates the built-in defaults from src/shieldnet/config.py so you can
+# see every knob in one place and change one without reading the source. Loading it
+# is therefore a no-op:
+#
+#     Config.load("config/default.yaml") == Config.load(None)
+#
+# scripts/check_wiring.py asserts exactly that, field by field, so the two cannot drift
+# apart: change a default in config.py without changing it here and `make wiring` fails
+# with the field name.
+#
+# A config file only needs to mention what it changes - everything omitted falls back
+# to the default. Unknown keys are a hard error, not a warning, because a typo like
+# `n_feature: 25` that silently kept 25 features would be a very expensive afternoon.
+#
+#     shieldnet train --config config/default.yaml
+#     shieldnet config --config config/fast.yaml     # print the merged result and stop
+# ============================================================================
+
+seed: 42          # threaded into the split, SMOTE, every estimator and Optuna
+n_jobs: -1        # -1 = all cores. Set to 1 when profiling, or on a shared machine.
+verbose: true
+
+paths:
+  root: "."       # "." means "relative to the project root" (where pyproject.toml is)
+  raw: data/raw               # the eight CICIDS2017 CSVs land here
+  interim: data/interim       # the consolidated + cleaned parquet
+  processed: data/processed   # the stratified working chunk and the splits
+  samples: data/samples       # small CSVs for demos and for the app's upload box
+  artifacts: artifacts        # bundle.joblib, manifest.json, optuna.db
+  figures: reports/figures
+  reports: reports
+
+data:
+  # `shieldnet download` tries the first slug and falls back to the second. Both are
+  # mirrors of the same CIC release; the alt one needs dataset rules accepted.
+  kaggle_dataset: chethuhn/network-intrusion-dataset
+  kaggle_dataset_alt: cicdataset/cicids2017
+
+  # Per-class caps for the stratified working chunk. CICIDS2017 is 2.83M rows and
+  # 80.3% BENIGN; training on all of it buys almost nothing and costs an hour a run.
+  #
+  # A class NOT listed here is kept in full. That is the important half of the design:
+  # capping is only ever applied downwards, so all 11 Heartbleed rows and all 21 SQL
+  # injection rows survive into training. A uniform "sample 10% of everything" would
+  # have left one Heartbleed row and no way to learn or to score it.
+  caps:
+    BENIGN: 150000
+    DoS Hulk: 40000
+    PortScan: 40000
+    DDoS: 35000
+
+  # Fold Heartbleed (11), Infiltration (36) and Web Attack - SQL Injection (21) into a
+  # single "Rare Attacks" class: 15 labels become 13. Three classes with a dozen rows
+  # each cannot be learned, cannot be cross-validated (a 3-fold split of 11 rows) and
+  # cannot be reported honestly - one row moving swings their recall by 9 points. Set
+  # this to false to reproduce the 15-class numbers and see that happen.
+  merge_rare: true
+
+  drop_duplicates: true   # exact-duplicate flows; the run logs how many it removed
+  drop_constant: true     # variance measured on the TRAIN split only, never the test
+
+  imputer: median         # median | knn
+  knn_neighbours: 5
+
+  # standard | minmax | robust | none. Irrelevant for the tree models, load-bearing for
+  # logistic regression and the CNN-BiLSTM.
+  scaler: standard
+
+  # Winsorise every feature at this quantile and its mirror, using training values only.
+  # Flow Bytes/s reaches ~1e9 next to a median near 1e3; without this, min-max scaling
+  # crushes almost every row to ~0 and the gradient-based models never recover.
+  # `null` disables clipping.
+  clip_quantile: 0.9995
+
+  # Not utf-8, and not negotiable: the shipped header contains a 0x96 en-dash byte in
+  # "Web Attack \x96 Brute Force". Reading as utf-8 raises UnicodeDecodeError on line 1.
+  encoding: latin-1
+
+  # Streaming window: about 170 MB per chunk, a couple alive at once. It does not bound
+  # the non-streaming load, whose peak is ~2x the finished frame (~2 GB) at any size.
+  read_chunk_rows: 250000
+
+  test_size: 0.20    # carved out first, stratified, and never touched again
+  val_size: 0.10     # also a fraction of the whole, so the split is 0.20/0.10/0.70
+  min_class_rows: 10 # below this a class is reported as unstratifiable
+
+features:
+  n_features: 25     # of 77 usable columns
+  # Three rankers, combined by mean reciprocal rank rather than by score: MI is in nats,
+  # chi2 is a test statistic and RFE gives an ordinal rank, so averaging their raw values
+  # would just be a vote weighted by whichever scale happens to be largest.
+  methods: [mutual_info, chi2, rfe]
+  ranking_sample_rows: 60000   # MI is O(n log n) per feature; RFE is worse
+  rfe_estimator: random_forest
+  rfe_step: 0.1
+  correlation_threshold: 0.95  # drop one of any pair above this before ranking
+
+  # Re-run the whole selection on N bootstrap resamples and report how often each feature
+  # survives. 0 disables it (it multiplies selection time by N). A feature picked in 5/5
+  # resamples is a finding; one picked in 2/5 is noise, and distinguishing them is most
+  # of what a feature-importance section is worth.
+  stability_runs: 0
+
+  ablation_sizes: [10, 15, 20, 25, 30, 40]
+
+balance:
+  # smote | smote_tomek | class_weight | none.
+  # Applied to the TRAINING split only. Resampling validation or test would invent a
+  # score that no real traffic can reproduce, and it is the single easiest way to
+  # publish a 99% F1 that means nothing.
+  strategy: smote
+
+  # Oversample each minority class to at most this fraction of the majority class.
+  max_ratio: 0.25
+
+  k_neighbours: 5   # lowered automatically when the smallest class has fewer than k+1
+
+  # Hard ceiling on the expansion factor, whatever max_ratio implies. The 70% train split
+  # holds 105,000 BENIGN and 47 Rare Attacks rows, so lifting the latter to 25% of the
+  # majority means inventing 26,203 rows from 47 - a 559x expansion that teaches the model
+  # the shape of SMOTE's interpolation segments rather than the shape of the attack. 20x
+  # is aggressive and still bounded: the class stops at 940 rows.
+  max_expansion: 20.0
+
+  use_class_weight: true   # belt and braces: weights too, where the estimator takes them
+
+tune:
+  enabled: true
+  n_trials: 40
+  timeout_seconds: 1800   # null for no limit
+  cv_folds: 3
+
+  # Deliberately NOT train.selection_metric. Tuning wants a smooth, low-variance signal:
+  # log loss is a proper scoring rule that moves for every row, so a trial that improves
+  # the model slightly gets credit. Macro F1 over 13 classes is a step function of the
+  # arg-max, and with ~a dozen rows of the rarest class in a CV fold, one row flipping
+  # moves it by ~0.02 - noise that Optuna's sampler will happily chase for 40 trials.
+  metric: log_loss
+  pruner: median
+  study_name: shieldnet
+
+  # SQLite storage so a study survives a Colab disconnect. Resumption needs no flag: the
+  # study is looked up by `study_name` in this database and continued if it is already
+  # there, so re-running the same command after a crash carries on from trial N rather
+  # than from trial 1. Relative paths here are resolved against the run's artifacts
+  # directory, not your shell's working directory, so --root and SHIELDNET_ROOT move the
+  # study along with everything else.
+  storage: sqlite:///artifacts/optuna.db
+
+train:
+  models: [logistic_regression, random_forest, xgboost, lightgbm, cnn_bilstm]
+  primary: xgboost   # shipped only when you override the leaderboard: --select primary
+
+  # Macro F1 on the VALIDATION split picks the deployed model.
+  #
+  # Not accuracy: predicting BENIGN for every row scores 0.803 on CICIDS2017 while
+  # detecting nothing at all. Not log loss either, even though that is the tuning
+  # objective - log loss rewards calibration on the majority class, so a model that is
+  # beautifully calibrated about benign traffic and blind to Bot can win it. Macro F1
+  # weights all 13 classes equally, which is the actual deployment requirement.
+  selection_metric: macro_f1
+
+  epochs: 40
+  batch_size: 512
+  early_stopping_patience: 6
+  learning_rate: 0.001
+
+  shap_background_rows: 200    # background distribution for the explainer
+  shap_explain_rows: 2000      # rows explained for the global summary

@@ -1,0 +1,47 @@
+# Streamlit settings for the ShieldNet app.
+# ============================================================================
+# Streamlit reads .streamlit/config.toml relative to the *working directory*, so this
+# file applies when you run from `app/`, and `shieldnet serve` sets the directory for
+# you. A copy at the project root would win when running from there; keeping only one
+# copy means there is one place to change a colour.
+# ============================================================================
+
+[theme]
+base = "light"
+# Deep blue rather than the default red-orange. Red is spent on severity in this app -
+# it marks a critical verdict - and a red primary button would make every control look
+# like an alarm.
+primaryColor = "#1f4e79"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f6f7f9"
+textColor = "#1a1d21"
+
+[server]
+# 400 MB, double Streamlit's 200 MB default. The eight raw day-files are roughly 1 GB
+# together, so they average about 125 MB and the largest - Wednesday, which carries about
+# a quarter of the 2.83M rows on its own - is around twice that. The default therefore
+# sits inside the range rather than above it: most day-files upload fine and the big one
+# is rejected, which is the worst possible place for a limit to be. Note this only
+# applies when Streamlit is started from this directory; `shieldnet serve` does that for
+# you, and tests/check_cli.py asserts it. Even so, `shieldnet predict` is the better tool
+# at that size, because it streams the file in chunks instead of holding the whole frame
+# in the browser's memory budget.
+maxUploadSize = 400
+enableXsrfProtection = true
+# The uploaded capture may contain real traffic from someone's network. It is scored in
+# this process and never sent anywhere; usage statistics stay off so that stays true of
+# the metadata too.
+enableCORS = false
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+# Re-run the script on save. Convenient while editing, and harmless in a demo because
+# the trained model sits behind st.cache_resource and is not reloaded.
+fastReruns = true
+
+[client]
+# Show the exception in the browser rather than only in the terminal. This app is
+# usually demonstrated by someone who is looking at the screen, not at the console.
+showErrorDetails = true

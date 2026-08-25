@@ -1,0 +1,61 @@
+# ShieldNet - fast smoke configuration
+# ============================================================================
+# The point of this file is to exercise every stage of the pipeline in a couple of
+# minutes on a laptop CPU, so that a mistake in the plumbing is found before an hour
+# of GPU time is spent on it.
+#
+#     shieldnet train --config config/fast.yaml
+#
+# The numbers it produces are NOT results. 41k rows and no tuning will give a macro F1
+# well below what the real run reaches, and the rarest classes will be close to
+# unlearnable. Use it to check that the code runs, then run config/default.yaml.
+# ============================================================================
+
+seed: 42
+n_jobs: -1
+
+data:
+  # About 41k rows: the caps below sum to 19,500, and every class not named here is kept
+  # in full, which adds 21,385 more. The caps only ever bite downwards, so even the smoke
+  # run has all 11 Heartbleed rows and can prove the rare-class path works rather than
+  # skipping it - more than half of this config is minority traffic.
+  caps:
+    BENIGN: 8000
+    DoS Hulk: 3000
+    PortScan: 3000
+    DDoS: 2500
+    DoS GoldenEye: 1500
+    FTP-Patator: 1500
+  read_chunk_rows: 100000
+
+features:
+  n_features: 15
+  # RFE fits a random forest once per elimination step; on a smoke run it dominates the
+  # wall clock and changes the selected set hardly at all, so it comes out.
+  methods: [mutual_info, chi2]
+  ranking_sample_rows: 10000
+  ablation_sizes: [10, 15, 20]
+
+balance:
+  strategy: smote
+  max_ratio: 0.25
+  max_expansion: 10.0
+
+tune:
+  # Off. 40 Optuna trials on 20k rows is 40 fits to pick hyper-parameters that will be
+  # thrown away when the real run starts.
+  enabled: false
+  n_trials: 5           # honoured if you flip enabled back on with --tune
+  timeout_seconds: 120
+  cv_folds: 2
+  storage: null         # no sqlite file to leave behind
+
+train:
+  # The two cheapest models that still differ in kind - one linear, one ensemble - so a
+  # bug in the model-agnostic code (bundling, explanation, calibration) still shows up.
+  models: [logistic_regression, random_forest]
+  primary: random_forest
+  selection_metric: macro_f1
+  epochs: 3
+  shap_background_rows: 50
+  shap_explain_rows: 200

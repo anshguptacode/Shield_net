@@ -1,0 +1,85 @@
+[build-system]
+# 64 is the floor for two measured reasons, not for comfort. `pip install -e .` needs the
+# PEP 660 editable hook, which setuptools gained in 64.0.0; below that pip refuses with
+# "missing the 'build_editable' hook". And everything here is declared in [project]
+# rather than in a setup.py, which setuptools only reads from 61.0.0 - on 59.6 (what
+# Ubuntu 22.04 ships) a non-editable install does not error, it builds a wheel named
+# UNKNOWN-0.0.0 containing no modules and reports success. Pinning higher than the code
+# needs is its own bug, though: it makes pip fetch a build-time setuptools on machines
+# whose own copy would have done, which is what breaks on an offline lab machine.
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shieldnet"
+version = "1.0.0"
+description = "Explainable multi-class network intrusion detection on CICIDS2017"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Ansh", email = "ansh@example.com" }]
+keywords = ["intrusion-detection", "cicids2017", "machine-learning", "shap", "explainability"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Only what every code path needs. `import shieldnet` and `shieldnet doctor` must work
+# with nothing but these two, so that a missing scikit-learn is reported as a sentence
+# instead of crashing the command whose job is to tell you what is missing.
+dependencies = [
+    "numpy>=1.23",
+    "pandas>=1.5",
+]
+
+[project.optional-dependencies]
+# Everything needed to train. Split out so a deployment that only serves an existing
+# bundle does not drag in Optuna and TensorFlow - see the note on `app` below for what
+# a serve-only install actually needs.
+ml = [
+    "scikit-learn>=1.2",
+    "imbalanced-learn>=0.11",
+    "xgboost>=1.7",
+    "lightgbm>=4.0",
+    "joblib>=1.3",
+    "pyyaml>=6.0",
+    "matplotlib>=3.6",
+    "seaborn>=0.12",
+    "scipy>=1.9",
+    "pyarrow>=12.0",
+]
+deep = ["tensorflow>=2.12"]
+explain = ["shap>=0.43"]
+tune = ["optuna>=3.3"]
+# The widgets, plus the two things loading a bundle needs. Note what this does NOT give
+# you: the library the model itself was built with. A bundle whose model is an XGBoost
+# booster needs xgboost importable to unpickle, so a serve-only deployment is
+# `.[app]` plus whichever one of xgboost / lightgbm / scikit-learn / tensorflow the
+# `model_name` in manifest.json names. `shieldnet doctor` prints that name and prints
+# which of those libraries are importable, which is the fastest way to find out.
+app = ["streamlit>=1.28", "plotly>=5.15", "joblib>=1.3", "pyyaml>=6.0"]
+data = ["kaggle>=1.5"]
+# The one people actually want: pip install -e ".[all]"
+all = [
+    "scikit-learn>=1.2", "imbalanced-learn>=0.11", "xgboost>=1.7", "lightgbm>=4.0",
+    "joblib>=1.3", "pyyaml>=6.0", "matplotlib>=3.6", "seaborn>=0.12", "scipy>=1.9",
+    "pyarrow>=12.0", "tensorflow>=2.12", "shap>=0.43", "optuna>=3.3",
+    "streamlit>=1.28", "plotly>=5.15", "kaggle>=1.5",
+]
+
+[project.scripts]
+shieldnet = "shieldnet.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/<YOUR GITHUB>/shieldnet"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# No py.typed marker on purpose. The modules are annotated throughout, but shipping the
+# marker tells other projects' type checkers to trust those annotations, and nothing here
+# has been run through mypy to earn that.

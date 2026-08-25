@@ -1,0 +1,57 @@
+# ShieldNet - runtime requirements
+# ============================================================================
+#   cd shieldnet && pip install -r requirements.txt
+#
+# Equivalent to `pip install -e ".[all]"`, kept as a file because Colab, Binder and
+# most CI images expect one. Version floors, not pins: pins rot, and every floor here
+# marks a real API this code depends on rather than "the version I happened to have".
+#
+# The `-e .` below is not decoration. Without it pip installs these dependencies and
+# not ShieldNet itself, so `import shieldnet` and the `shieldnet` command are both
+# missing and the failure looks like a broken install rather than an incomplete one.
+# pip resolves that `.` against your working directory, not against this file, which is
+# why the invocation above cds first.
+# ============================================================================
+
+-e .
+
+# --- core: `import shieldnet` and `shieldnet doctor` need only these two ---------
+numpy>=1.23           # NumPy 2.x is fine and is what this was developed against
+pandas>=1.5           # needs the `dtype_backend`-era to_numeric behaviour
+
+# --- classical machine learning -------------------------------------------------
+scikit-learn>=1.2     # StratifiedKFold, RFE, and the 1.2 metrics signatures
+imbalanced-learn>=0.11  # SMOTE, SMOTETomek. Must match your scikit-learn major.
+xgboost>=1.7          # `device=`/`tree_method="hist"` path used by the GPU config
+lightgbm>=4.0         # 4.x renamed `early_stopping_rounds` into a callback
+scipy>=1.9            # chi2 selection and the sparse paths inside sklearn
+
+# --- persistence and configuration ----------------------------------------------
+joblib>=1.3           # bundle.joblib
+pyyaml>=6.0           # config/*.yaml
+pyarrow>=12.0         # parquet cache for the cleaned frame; without it the cache
+                      # silently falls back to CSV and re-reads cost minutes
+
+# --- figures ---------------------------------------------------------------------
+matplotlib>=3.6
+seaborn>=0.12         # confusion-matrix and correlation heatmaps only
+
+# --- deep learning ---------------------------------------------------------------
+# The CNN-BiLSTM. Skip this line if you only want the classical models: the registry
+# marks the deep models unavailable and the run continues without them.
+tensorflow>=2.12
+
+# --- explanation -----------------------------------------------------------------
+# SHAP is optional in the same way: explain.py falls back to occlusion in log-odds,
+# which is slower per row but needs nothing beyond numpy.
+shap>=0.43
+
+# --- hyper-parameter search ------------------------------------------------------
+optuna>=3.3           # 3.x pruner and storage API
+
+# --- the app ---------------------------------------------------------------------
+streamlit>=1.28       # needs st.data_editor / st.column_config
+plotly>=5.15          # interactive per-class confidence chart
+
+# --- dataset download ------------------------------------------------------------
+kaggle>=1.5           # `shieldnet download`; needs ~/.kaggle/kaggle.json

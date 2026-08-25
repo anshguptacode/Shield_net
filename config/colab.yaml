@@ -1,0 +1,84 @@
+# ShieldNet - Colab / full-run configuration
+# ============================================================================
+# The settings behind the reported numbers. Assumes a Colab T4 or better and a Kaggle
+# token in place:
+#
+#     shieldnet download --config config/colab.yaml
+#     shieldnet train    --config config/colab.yaml
+#
+# Expect roughly 35-60 minutes end to end on a T4: ~4 min to consolidate the eight raw
+# CSVs, ~3 min for selection, ~25 min for tuning across the classical models, ~10 min
+# for the CNN-BiLSTM, ~4 min for SHAP.
+#
+# Colab's session dies at 12 hours, and often sooner. Everything here that can be
+# resumed is: the cleaned parquet is cached under data/interim keyed by config hash, and
+# the Optuna study lives in a sqlite file, so a reconnect re-runs neither.
+# ============================================================================
+
+seed: 42
+n_jobs: -1
+
+paths:
+  # Leave this alone on Colab. The obvious move - point it at Drive so the artifacts
+  # outlive the runtime - puts artifacts/optuna.db on a FUSE mount, and SQLite locking
+  # over Drive is exactly the failure that costs you a forty-minute study. Train on
+  # local disk and copy the finished artifact to Drive afterwards; the notebook's last
+  # section does that.
+  root: "."
+
+data:
+  # Full caps. 265,000 capped rows plus every minority row kept in full (39,616 of them)
+  # is 304,616 of the 2.83M, which is the point where adding more BENIGN stops changing
+  # macro F1.
+  caps:
+    BENIGN: 150000
+    DoS Hulk: 40000
+    PortScan: 40000
+    DDoS: 35000
+  merge_rare: true
+  drop_duplicates: true
+  scaler: standard
+  clip_quantile: 0.9995
+  # Colab gives ~13 GB of RAM. The streaming load is what runs here (more than one raw
+  # file is present), so the peak is a couple of 250k-row chunks - a few hundred MB - not
+  # the ~2 GB the non-streaming consolidation would need. Raise this for speed on a
+  # high-RAM runtime; the reason to lower it is a small local machine, not Colab.
+  read_chunk_rows: 250000
+
+features:
+  n_features: 25
+  methods: [mutual_info, chi2, rfe]
+  ranking_sample_rows: 60000
+  # Worth the extra minutes here, because "which features matter" is a claim the report
+  # makes and 5 resamples is what turns it from an anecdote into a measurement.
+  stability_runs: 5
+  ablation_sizes: [10, 15, 20, 25, 30, 40]
+
+balance:
+  strategy: smote
+  max_ratio: 0.25
+  max_expansion: 20.0
+  use_class_weight: true
+
+tune:
+  enabled: true
+  n_trials: 40
+  # 45 minutes. Optuna stops cleanly at the timeout and keeps the best trial found so
+  # far, so this is a budget rather than a deadline to be missed.
+  timeout_seconds: 2700
+  cv_folds: 3
+  metric: log_loss
+  pruner: median
+  # Survives a disconnect. Delete artifacts/optuna.db to start a study fresh.
+  storage: sqlite:///artifacts/optuna.db
+
+train:
+  models: [logistic_regression, random_forest, xgboost, lightgbm, cnn_bilstm]
+  primary: xgboost
+  selection_metric: macro_f1
+  epochs: 40
+  batch_size: 512
+  early_stopping_patience: 6
+  learning_rate: 0.001
+  shap_background_rows: 200
+  shap_explain_rows: 2000
