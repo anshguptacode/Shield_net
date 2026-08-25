@@ -73,7 +73,7 @@ class LogisticRegressionModel(ShieldModel):
             # that scales acceptably to 300k rows without a sparse matrix.
             "solver": "lbfgs",
             "C": 1.0,
-            "": 2000,
+            "max_iter": 2000,
             "n_jobs": self.n_jobs,
             "random_state": self.seed,
             **self.params,
@@ -99,7 +99,7 @@ class LogisticRegressionModel(ShieldModel):
     def search_space(trial):
         return {
             "C": trial.suggest_float("C", 1e-3, 1e2, log=True),
-            "max_iter": trial.suggest_categorical("max_iter", [400, 800, 1500]),
+            "max_iter": trial.suggest_categorical("max_iter", [1000, 2000, 3000]),
         }
 
 
@@ -426,7 +426,7 @@ class MLPModel(ShieldModel):
             "alpha": 1e-4,
             "batch_size": 512,
             "learning_rate_init": 1e-3,
-            "": 120,
+            "max_iter": 120,
             "early_stopping": True,
             "n_iter_no_change": 10,
             "validation_fraction": 0.1,
